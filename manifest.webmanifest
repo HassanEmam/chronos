@@ -1,0 +1,24 @@
+{
+  "name": "Chronos — XER Analyzer",
+  "short_name": "Chronos",
+  "description": "Analyze Primavera P6 XER files in your browser: overview, critical path, resources, curves, and DCMA 14-point checks.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
