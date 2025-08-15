@@ -8,6 +8,7 @@ import { DataDisplayManager } from './dataDisplayManager.js';
 import { ExportManager } from './exportManager.js';
 import { IntegrityChecker } from './integrityChecker.js';
 import { ResourceCurveManager } from './resourceCurveManager.js';
+import { GanttChart } from './ganttChart.js';
 
 class ChronosApp {
     constructor() {
@@ -31,6 +32,7 @@ class ChronosApp {
         this.exportManager = new ExportManager(this);
         this.integrityChecker = new IntegrityChecker(this);
         this.resourceCurveManager = new ResourceCurveManager(this);
+        this.ganttChart = new GanttChart(this);
     }
 
     setupEventListeners() {
@@ -171,3 +173,17 @@ window.exportResourcesCSV = () => window.chronosApp.exportManager.exportResource
 window.exportProjectJSON = () => window.chronosApp.exportManager.exportProjectJSON();
 window.exportIntegrityReportCSV = () => window.chronosApp.exportManager.exportIntegrityReportCSV();
 window.exportIntegrityReportJSON = () => window.chronosApp.exportManager.exportIntegrityReportJSON();
+
+// Gantt chart function
+window.showGanttChart = function() {
+    console.log('🎯 showGanttChart called');
+    console.log('window.chronosApp:', window.chronosApp);
+    console.log('window.chronosApp.ganttChart:', window.chronosApp ? window.chronosApp.ganttChart : 'chronosApp not available');
+    
+    if (window.chronosApp && window.chronosApp.ganttChart) {
+        window.chronosApp.ganttChart.initializeGantt();
+    } else {
+        console.error('❌ chronosApp or ganttChart not available');
+        alert('Please load an XER file first before generating the Gantt chart.');
+    }
+};

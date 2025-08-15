@@ -4,7 +4,7 @@
   - Serves cached files first, then updates in the background
 */
 
-const CACHE_NAME = 'chronos-v2';
+const CACHE_NAME = 'chronos-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,7 +18,9 @@ const APP_SHELL = [
   './js/dataDisplayManager.js',
   './js/exportManager.js',
   './js/integrityChecker.js',
-  './js/resourceCurveManager.js'
+  './js/resourceCurveManager.js',
+  './js/ganttChart.js',
+  './css/styles.css'
 ];
 
 self.addEventListener('install', (event) => {

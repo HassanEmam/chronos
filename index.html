@@ -42,6 +42,7 @@
         <div id="results" class="results">
             <div class="tabs">
                 <button class="tab active" onclick="showTab('overview')">📊 Overview</button>
+                <button class="tab" onclick="showTab('gantt')">📅 Gantt Chart</button>
                 <button class="tab" onclick="showTab('activities')">📋 Activities</button>
                 <button class="tab" onclick="showTab('critical')">🚨 Critical Path</button>
                 <button class="tab" onclick="showTab('resources')">👥 Resources</button>
@@ -56,6 +57,18 @@
                     <div id="projectInfo" class="project-info"></div>
                     <div id="statsGrid" class="stats-grid"></div>
                     <div id="statusBreakdown"></div>
+                </div>
+
+                <div id="gantt" class="tab-pane">
+                    <div class="gantt-header-info">
+                        <h3>📅 Project Gantt Chart</h3>
+                        <p>Interactive timeline view of project activities with hierarchical structure and dependencies.</p>
+                        <button class="action-btn" onclick="showGanttChart()" id="generateGanttBtn">
+                            🔄 Generate Gantt Chart
+                        </button>
+                    </div>
+                    
+                    <div id="ganttResults" class="gantt-results"></div>
                 </div>
 
                 <div id="activities" class="tab-pane">

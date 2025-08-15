@@ -112,6 +112,7 @@ const SCHEMAS = {
     TASK: {
         task_id: { type: 'string' },
         proj_id: { type: 'string' },
+        wbs_id: { type: 'string' },
         task_code: { type: 'string' },
         task_name: { type: 'string' },
         status_code: { type: 'string' },
@@ -125,6 +126,19 @@ const SCHEMAS = {
         early_end_date: { type: 'date' },
         late_start_date: { type: 'date' },
         late_end_date: { type: 'date' }
+    },
+    PROJWBS: {
+        wbs_id: { type: 'string' },
+        proj_id: { type: 'string' },
+        obs_id: { type: 'string' },
+        seq_num: { type: 'number' },
+        est_wt: { type: 'number' },
+        proj_node_flag: { type: 'string' },
+        sum_data_flag: { type: 'string' },
+        status_code: { type: 'string' },
+        wbs_name: { type: 'string' },
+        wbs_short_name: { type: 'string' },
+        parent_wbs_id: { type: 'string' }
     },
     RSRC: {
         rsrc_id: { type: 'string' },
@@ -159,6 +173,7 @@ class Reader {
     constructor() {
         this.projects = [];
         this.activities = [];
+        this.wbs = [];
         this.resources = [];
         this.relationships = [];
         this.activityResources = [];
@@ -183,6 +198,13 @@ class Reader {
         if (this.rawData.TASK) {
             this.activities = this.rawData.TASK.map(record => 
                 this.parser.convertTypes(record, SCHEMAS.TASK)
+            );
+        }
+
+        // Build WBS
+        if (this.rawData.PROJWBS) {
+            this.wbs = this.rawData.PROJWBS.map(record => 
+                this.parser.convertTypes(record, SCHEMAS.PROJWBS)
             );
         }
 
