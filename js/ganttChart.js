@@ -36,8 +36,8 @@ export class GanttChart {
         this.columnWidths = {
             index: 40,
             name: 180,
-            start: 80,
-            finish: 80,
+            start: 100,
+            finish: 100,
             duration: 60,
             progress: 70
         };
@@ -50,6 +50,8 @@ export class GanttChart {
         this.renderingScheduled = false;
         this.lastVisibleItems = null;
         this.cachedElements = new Map();
+        this.isCollapsingAll = false;
+        this.isExpandingAll = false;
         this.virtualScrolling = {
             enabled: false, // Start disabled, enable automatically for large datasets
             threshold: 100, // Enable when more than 100 items
@@ -213,15 +215,25 @@ export class GanttChart {
                 }
             }
             
+            // Calculate duration - prefer planned duration, fallback to date difference
+            let duration = parseFloat(activity.target_drtn_hr_cnt || 0);
+            
+            // If no planned duration but we have valid dates, calculate from date difference
+            if (duration === 0 && startDate && endDate) {
+                const durationMs = endDate.getTime() - startDate.getTime();
+                const totalDays = Math.ceil(durationMs / (1000 * 60 * 60 * 24)); // Convert ms to days
+                duration = totalDays * 8; // Convert days to hours (assuming 8-hour work day)
+            }
+            
             const item = {
                 id: activity.task_id,
                 code: activity.task_code,
                 name: activity.task_name,
                 startDate: startDate,
                 endDate: endDate,
-                duration: parseFloat(activity.target_drtn_hr_cnt || 0),
+                duration: duration,
                 progress: parseFloat(activity.phys_complete_pct || 0) / 100,
-                isMilestone: (activity.target_drtn_hr_cnt || 0) === 0,
+                isMilestone: duration === 0,
                 isCritical: parseFloat(activity.total_float_hr_cnt || 0) === 0,
                 status: activity.status_code,
                 level: 0, // Will be set based on WBS parent
@@ -302,17 +314,20 @@ export class GanttChart {
                     ...itemsWithDates.map(child => child.endDate.getTime())
                 ));
                 
-                // Calculate total duration
-                wbsItem.duration = itemsWithDates.reduce((sum, child) => 
+                // Calculate duration based on date difference
+                // For WBS items, calculate working days between start and end dates
+                const durationMs = wbsItem.endDate.getTime() - wbsItem.startDate.getTime();
+                const totalDays = Math.ceil(durationMs / (1000 * 60 * 60 * 24)); // Convert ms to days and round up
+                wbsItem.duration = totalDays * 8; // Convert days to hours (assuming 8-hour work day)
+                
+                // Calculate weighted progress based on children's progress and duration
+                const totalChildDuration = itemsWithDates.reduce((sum, child) => 
                     sum + (child.duration || 0), 0
                 );
-                
-                // Calculate weighted progress
-                const totalDuration = wbsItem.duration;
-                if (totalDuration > 0) {
+                if (totalChildDuration > 0) {
                     wbsItem.progress = itemsWithDates.reduce((sum, child) => 
                         sum + ((child.duration || 0) * (child.progress || 0)), 0
-                    ) / totalDuration;
+                    ) / totalChildDuration;
                 } else {
                     wbsItem.progress = 0;
                 }
@@ -511,11 +526,11 @@ export class GanttChart {
                                 <div class="resize-handle" data-column="name"></div>
                             </div>
                             <div class="gantt-header-cell" style="width: 80px;" data-column="start">
-                                Start Date
+                                Start 
                                 <div class="resize-handle" data-column="start"></div>
                             </div>
                             <div class="gantt-header-cell" style="width: 80px;" data-column="finish">
-                                Finish Date
+                                Finish
                                 <div class="resize-handle" data-column="finish"></div>
                             </div>
                             <div class="gantt-header-cell" style="width: 60px;" data-column="duration">
@@ -576,18 +591,37 @@ export class GanttChart {
         this.checkDataSize();
         
         this.renderingScheduled = true;
-        requestAnimationFrame(() => {
-            this.renderLeftPanel();
-            this.renderTimelineHeader();
-            this.renderGrid();
-            this.renderBars();
-            if (this.config.showDependencies) {
-                this.renderDependencies();
-            }
-            this.renderTodayLine();
-            this.updateItemCount();
-            this.renderingScheduled = false;
-        });
+        
+        // Use a longer delay for batch operations like expand/collapse all
+        const isCollapseBatch = this.isCollapsingAll || this.isExpandingAll;
+        const delay = isCollapseBatch ? 100 : 0;
+        
+        if (delay > 0) {
+            setTimeout(() => {
+                requestAnimationFrame(() => {
+                    this.performRender();
+                });
+            }, delay);
+        } else {
+            requestAnimationFrame(() => {
+                this.performRender();
+            });
+        }
+    }
+    
+    performRender() {
+        this.renderLeftPanel();
+        this.renderTimelineHeader();
+        this.renderGrid();
+        this.renderBars();
+        if (this.config.showDependencies) {
+            this.renderDependencies();
+        }
+        this.renderTodayLine();
+        this.updateItemCount();
+        this.renderingScheduled = false;
+        this.isCollapsingAll = false;
+        this.isExpandingAll = false;
     }
 
     renderLeftPanel() {
@@ -608,7 +642,7 @@ export class GanttChart {
         
         let html = '';
         visibleItems.forEach((item, index) => {
-            const indent = item.level * 20;
+            const indent = item.level * 5;
             const hasChildren = item.children.length > 0;
             const isExpanded = this.expandedItems.has(item.id) || item.isExpanded;
             const expandIcon = hasChildren ? (isExpanded ? '▼' : '▶') : '';
@@ -1012,8 +1046,20 @@ export class GanttChart {
     
     formatDuration(hours) {
         if (hours === 0) return 'Milestone';
-        const days = Math.round(hours / 8);
-        return days === 1 ? '1 day' : `${days} days`;
+        const days = hours / 8; // Convert hours to days (8-hour work day)
+        
+        // If less than 1 day, show fractional days
+        if (days < 1) {
+            return `${days.toFixed(0)}`;
+        }
+        
+        // If it's a whole number of days, show without decimals
+        if (days % 1 === 0) {
+            return days === 1 ? '1' : `${days}`;
+        }
+        
+        // Otherwise show with one decimal place
+        return `${days.toFixed(0)}`;
     }
 
     formatDate(date) {
@@ -1080,14 +1126,61 @@ export class GanttChart {
             `${visibleItems.length} tasks (${this.flattenHierarchy(this.ganttData).length} total)`;
     }
 
+    // Debug method for scroll synchronization issues
+    debugScrollSync() {
+        const leftPanel = document.getElementById('ganttLeftPanel');
+        const rightPanel = document.getElementById('ganttRightPanel');
+        const tasksContainer = document.getElementById('ganttTasks');
+        const chartArea = document.getElementById('ganttChartArea');
+        
+        console.log('🔍 Scroll Debug Info:', {
+            leftPanel: leftPanel ? `scrollTop: ${leftPanel.scrollTop}, scrollHeight: ${leftPanel.scrollHeight}, clientHeight: ${leftPanel.clientHeight}` : 'null',
+            rightPanel: rightPanel ? `scrollTop: ${rightPanel.scrollTop}, scrollHeight: ${rightPanel.scrollHeight}, clientHeight: ${rightPanel.clientHeight}` : 'null',
+            tasksContainer: tasksContainer ? `scrollTop: ${tasksContainer.scrollTop}, scrollHeight: ${tasksContainer.scrollHeight}, clientHeight: ${tasksContainer.clientHeight}` : 'null',
+            chartArea: chartArea ? `scrollTop: ${chartArea.scrollTop}, scrollHeight: ${chartArea.scrollHeight}, clientHeight: ${chartArea.clientHeight}` : 'null'
+        });
+    }
+
     setupEventListeners() {
-        // Expand/Collapse controls
-        document.getElementById('ganttExpandAll').addEventListener('click', () => {
-            this.expandAll();
+        // Expand/Collapse controls with debouncing to prevent rapid-fire clicks
+        let expandCollapseTimeout;
+        
+        document.getElementById('ganttExpandAll').addEventListener('click', (e) => {
+            if (expandCollapseTimeout) clearTimeout(expandCollapseTimeout);
+            
+            // Visual feedback - disable button temporarily
+            const button = e.target.closest('button');
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span>📂</span> Expanding...';
+            
+            expandCollapseTimeout = setTimeout(() => {
+                this.expandAll();
+                // Re-enable button after operation
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                }, 100);
+            }, 50); // 50ms debounce
         });
 
-        document.getElementById('ganttCollapseAll').addEventListener('click', () => {
-            this.collapseAll();
+        document.getElementById('ganttCollapseAll').addEventListener('click', (e) => {
+            if (expandCollapseTimeout) clearTimeout(expandCollapseTimeout);
+            
+            // Visual feedback - disable button temporarily
+            const button = e.target.closest('button');
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span>📁</span> Collapsing...';
+            
+            expandCollapseTimeout = setTimeout(() => {
+                this.collapseAll();
+                // Re-enable button after operation
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                }, 100);
+            }, 50); // 50ms debounce
         });
 
         // Time scale change
@@ -1143,47 +1236,112 @@ export class GanttChart {
             rightPanel: !!rightPanel,
             tasksContainer: !!tasksContainer,
             chartArea: !!chartArea,
-            timelineHeader: !!timelineHeader
+            timelineHeader: !!timelineHeader,
+            tasksContainerScrollable: tasksContainer ? tasksContainer.scrollHeight > tasksContainer.clientHeight : false,
+            chartAreaScrollable: chartArea ? chartArea.scrollHeight > chartArea.clientHeight : false
         });
 
         // Vertical scroll synchronization (with throttling for performance)
         let verticalScrollTimeout;
+        let isScrollingSynced = false; // Prevent infinite scroll loops
         
-        if (leftPanel && rightPanel) {
-            leftPanel.addEventListener('scroll', () => {
+        // Sync scrolling between tasks container (left) and chart area (right)
+        if (tasksContainer && chartArea) {
+            tasksContainer.addEventListener('scroll', () => {
+                if (isScrollingSynced) return;
                 if (verticalScrollTimeout) clearTimeout(verticalScrollTimeout);
                 
                 verticalScrollTimeout = setTimeout(() => {
-                    if (rightPanel.scrollTop !== leftPanel.scrollTop) {
-                        rightPanel.scrollTop = leftPanel.scrollTop;
+                    isScrollingSynced = true;
+                    
+                    // Sync chart area with tasks container
+                    if (chartArea.scrollTop !== tasksContainer.scrollTop) {
+                        chartArea.scrollTop = tasksContainer.scrollTop;
                     }
-                    if (chartArea && chartArea.scrollTop !== leftPanel.scrollTop) {
-                        chartArea.scrollTop = leftPanel.scrollTop;
+                    
+                    // Also sync the parent containers if they exist
+                    if (rightPanel && rightPanel.scrollTop !== tasksContainer.scrollTop) {
+                        rightPanel.scrollTop = tasksContainer.scrollTop;
                     }
                     
                     // Update virtual scrolling if enabled
                     if (this.virtualScrolling.enabled) {
                         this.renderGanttChart();
                     }
+                    
+                    isScrollingSynced = false;
                 }, 16); // ~60fps throttling
             });
 
-            rightPanel.addEventListener('scroll', () => {
+            chartArea.addEventListener('scroll', () => {
+                if (isScrollingSynced) return;
                 if (verticalScrollTimeout) clearTimeout(verticalScrollTimeout);
                 
                 verticalScrollTimeout = setTimeout(() => {
+                    isScrollingSynced = true;
+                    
+                    // Sync tasks container with chart area
+                    if (tasksContainer.scrollTop !== chartArea.scrollTop) {
+                        tasksContainer.scrollTop = chartArea.scrollTop;
+                    }
+                    
+                    // Also sync the parent containers if they exist
+                    if (leftPanel && leftPanel.scrollTop !== chartArea.scrollTop) {
+                        leftPanel.scrollTop = chartArea.scrollTop;
+                    }
+                    
+                    // Update virtual scrolling if enabled
+                    if (this.virtualScrolling.enabled) {
+                        this.renderGanttChart();
+                    }
+                    
+                    isScrollingSynced = false;
+                }, 16); // ~60fps throttling
+            });
+        }
+        
+        // Additional sync for parent containers if they have scroll
+        if (leftPanel && rightPanel) {
+            leftPanel.addEventListener('scroll', () => {
+                if (isScrollingSynced) return;
+                if (verticalScrollTimeout) clearTimeout(verticalScrollTimeout);
+                
+                verticalScrollTimeout = setTimeout(() => {
+                    isScrollingSynced = true;
+                    
+                    if (rightPanel.scrollTop !== leftPanel.scrollTop) {
+                        rightPanel.scrollTop = leftPanel.scrollTop;
+                    }
+                    if (tasksContainer && tasksContainer.scrollTop !== leftPanel.scrollTop) {
+                        tasksContainer.scrollTop = leftPanel.scrollTop;
+                    }
+                    if (chartArea && chartArea.scrollTop !== leftPanel.scrollTop) {
+                        chartArea.scrollTop = leftPanel.scrollTop;
+                    }
+                    
+                    isScrollingSynced = false;
+                }, 16);
+            });
+
+            rightPanel.addEventListener('scroll', () => {
+                if (isScrollingSynced) return;
+                if (verticalScrollTimeout) clearTimeout(verticalScrollTimeout);
+                
+                verticalScrollTimeout = setTimeout(() => {
+                    isScrollingSynced = true;
+                    
                     if (leftPanel.scrollTop !== rightPanel.scrollTop) {
                         leftPanel.scrollTop = rightPanel.scrollTop;
                     }
                     if (tasksContainer && tasksContainer.scrollTop !== rightPanel.scrollTop) {
                         tasksContainer.scrollTop = rightPanel.scrollTop;
                     }
-                    
-                    // Update virtual scrolling if enabled
-                    if (this.virtualScrolling.enabled) {
-                        this.renderGanttChart();
+                    if (chartArea && chartArea.scrollTop !== rightPanel.scrollTop) {
+                        chartArea.scrollTop = rightPanel.scrollTop;
                     }
-                }, 16); // ~60fps throttling
+                    
+                    isScrollingSynced = false;
+                }, 16);
             });
         }
 
@@ -1360,28 +1518,63 @@ export class GanttChart {
     }
 
     expandAll() {
+        // Performance optimization: Batch all expand operations
+        this.isExpandingAll = true;
         const allItems = this.flattenHierarchy(this.ganttData);
+        let hasChanges = false;
+        
         allItems.forEach(item => {
             if (item.children.length > 0) {
-                this.expandedItems.add(item.id);
-                item.isExpanded = true;
+                if (!this.expandedItems.has(item.id)) {
+                    this.expandedItems.add(item.id);
+                    item.isExpanded = true;
+                    hasChanges = true;
+                }
             }
         });
-        this.renderGanttChart();
+        
+        // Only re-render if there were actual changes
+        if (hasChanges) {
+            this.clearCache(); // Clear cache to ensure fresh render
+            this.renderGanttChart();
+        } else {
+            this.isExpandingAll = false;
+        }
     }
 
     collapseAll() {
+        // Performance optimization: Check if there's anything to collapse
+        if (this.expandedItems.size === 0) {
+            return; // Nothing to collapse, skip expensive operations
+        }
+        
+        // Batch all collapse operations
+        this.isCollapsingAll = true;
         this.expandedItems.clear();
         const allItems = this.flattenHierarchy(this.ganttData);
         allItems.forEach(item => {
             item.isExpanded = false;
         });
+        
+        // Clear cache and trigger optimized re-render
+        this.clearCache();
         this.renderGanttChart();
     }
 
     toggleExpand(taskId) {
-        const allItems = this.flattenHierarchy(this.ganttData);
-        const item = allItems.find(i => i.id === taskId);
+        // Performance optimization: Find item without flattening entire hierarchy
+        const findItemById = (items, id) => {
+            for (const item of items) {
+                if (item.id === id) return item;
+                if (item.children.length > 0) {
+                    const found = findItemById(item.children, id);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        
+        const item = findItemById(this.ganttData, taskId);
         
         if (item && item.children.length > 0) {
             if (this.expandedItems.has(taskId)) {
@@ -1391,6 +1584,9 @@ export class GanttChart {
                 this.expandedItems.add(taskId);
                 item.isExpanded = true;
             }
+            
+            // Clear only the cached visible items, not everything
+            this.lastVisibleItems = null;
             this.renderGanttChart();
         }
     }
